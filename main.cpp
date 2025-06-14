@@ -76,7 +76,6 @@ public:
 
 class DeeperLevelOFI {
 private:
-
     double computeAverageDepth(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
         double average_depth = 0.0;
 
@@ -122,7 +121,70 @@ public:
 
 class IntegratedOFI {
 private:
+    // FPC 
+    Eigen::VectorXd w1;
+    bool w1_computed = false;
+
+    std::vector<double> computeRawOFI(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
+
+        std::vector<double> multiOFI;
+        std::vector<int> bid_size = bidLogic(current, previous, level);
+        std::vector<int> ask_size = askLogic(current, previous, level);
+
+        for (int i = 0; i < level; ++i) {
+            multiOFI.push_back(bid_size[i] - ask_size[i]);
+        }
+
+        return multiOFI;
+    }
+
+    void computeFPCHistoricalOFI(const std::vector<std::vector<double>>& historicalOFI, int level) {
+        int timeStamps = historicalOFI.size();
+
+        Eigen::MatrixXd X(timeStamps, level);
+        for (int t = 0; t < timeStamps; ++t) {
+            for (int l = 0; l < level; ++l) {
+                X(t, l) = historicalOFI[t][l];
+            }
+        }
+
+        Eigen::VectorXd mean = X.colwise().mean();
+        for (int i = 0; i < X.rows(); ++i) {
+            X.row(i) -= mean.transpose();
+        }
+
+        // Computing Covariance amatrix 
+        Eigen::MatrixXd cov = (X.transpose() * X) / (timeStamps - 1);
+
+        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(cov);
+
+        // one with the largest eigen values (solves gets it in assending order)
+        w1 = solver.eigenvectors().col(level - 1);
+
+        // Normalize the W1 by the l1 norm
+        w1 = w1 / w1.lpNorm<1>();
+
+        w1_computed = true;
+    }
 public:
+    void train(const std::vector<std::vector<double>>& historicalOFI, int level) {
+        computeFPCHistoricalOFI(historicalOFI, level);
+    }
+
+    double compute(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
+        if (!w1_computed) {
+            throw std::runtime_error("Need to train first! ");
+        }
+
+        std::vector<double> rawOFI = computeRawOFI(current, previous, level);
+
+        Eigen::VectorXd ofi_vector(level);
+        for (int i = 0; i < level; ++i) {
+            ofi_vector(i) = rawOFI[i];
+        }
+
+        return w1.dot(ofi_vector);
+    }
 };
 
 
@@ -151,13 +213,12 @@ orderbookSnapshot parseLineToSnapshot(const std::string& line, int level) {
     return multi_snapshot;
 }
 
-
+/***  Main Function ***/
 int main() {
     int level = 10;
     std::ifstream dataFile("first_25000_rows.csv");
     std::string line;
-    BestLevelOFI bestCalculator;
-    DeeperLevelOFI deeperCalculator;
+
 
     orderbookSnapshot previous, current;
     bool first = true;
@@ -165,27 +226,34 @@ int main() {
     // This will skip the first line, headder. 
     std::getline(dataFile, line);
 
+    /* Testing BestLevelOFI and DeeperLevelOFI */
 
+    // BestLevelOFI bestCalculator;
+    // DeeperLevelOFI deeperCalculator;
+    // for (int i = 0; i < 25; ++i) {
+    //     std::getline(dataFile, line);
+    //     current = parseLineToSnapshot(line, level);
+
+    //     if (!first) {
+    //         double ofi = bestCalculator.compute(current, previous);
+    //         std::vector<double> multi_ofi = deeperCalculator.computeRawOFI(current, previous, level);
+    //         std::vector<double> norm_ofi = deeperCalculator.compute(current, previous, level);
+    //         std::cout << i << ":  " << current.time_stamp << "Best OFI: " << ofi << std::endl;
+    //         for (int j = 0; j < level; ++j) {
+    //             std::cout << "   " << j + 1 << ":" << " Deeper OFI: " << multi_ofi[j] << " Normalized OFI: " << norm_ofi[j] << std::endl;
+    //         }
+    //     }
+    //     else {
+    //         first = false;
+    //     }
+
+    //     previous = current;
+    // }
+
+    // Testing IntegratedOFI 
     for (int i = 0; i < 25; ++i) {
-        std::getline(dataFile, line);
-        current = parseLineToSnapshot(line, level);
 
-        if (!first) {
-            double ofi = bestCalculator.compute(current, previous);
-            std::vector<double> multi_ofi = deeperCalculator.computeRawOFI(current, previous, level);
-            std::vector<double> norm_ofi = deeperCalculator.compute(current, previous, level);
-            std::cout << i << ":  " << current.time_stamp << "Best OFI: " << ofi << std::endl;
-            for (int j = 0; j < level; ++j) {
-                std::cout << "   " << j + 1 << ":" << " Deeper OFI: " << multi_ofi[j] << " Normalized OFI: " << norm_ofi[j] << std::endl;
-            }
-        }
-        else {
-            first = false;
-        }
-
-        previous = current;
     }
-
 
 
     return 1;
