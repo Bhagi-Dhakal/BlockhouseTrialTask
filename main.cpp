@@ -125,19 +125,6 @@ private:
     Eigen::VectorXd w1;
     bool w1_computed = false;
 
-    std::vector<double> computeRawOFI(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
-
-        std::vector<double> multiOFI;
-        std::vector<int> bid_size = bidLogic(current, previous, level);
-        std::vector<int> ask_size = askLogic(current, previous, level);
-
-        for (int i = 0; i < level; ++i) {
-            multiOFI.push_back(bid_size[i] - ask_size[i]);
-        }
-
-        return multiOFI;
-    }
-
     void computeFPCHistoricalOFI(const std::vector<std::vector<double>>& historicalOFI, int level) {
         int timeStamps = historicalOFI.size();
 
@@ -167,6 +154,19 @@ private:
         w1_computed = true;
     }
 public:
+
+    std::vector<double> computeRawOFI(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
+
+        std::vector<double> multiOFI;
+        std::vector<int> bid_size = bidLogic(current, previous, level);
+        std::vector<int> ask_size = askLogic(current, previous, level);
+
+        for (int i = 0; i < level; ++i) {
+            multiOFI.push_back(bid_size[i] - ask_size[i]);
+        }
+
+        return multiOFI;
+    }
     void train(const std::vector<std::vector<double>>& historicalOFI, int level) {
         computeFPCHistoricalOFI(historicalOFI, level);
     }
@@ -218,8 +218,6 @@ int main() {
     int level = 10;
     std::ifstream dataFile("first_25000_rows.csv");
     std::string line;
-
-
     orderbookSnapshot previous, current;
     bool first = true;
 
@@ -238,7 +236,7 @@ int main() {
     //         double ofi = bestCalculator.compute(current, previous);
     //         std::vector<double> multi_ofi = deeperCalculator.computeRawOFI(current, previous, level);
     //         std::vector<double> norm_ofi = deeperCalculator.compute(current, previous, level);
-    //         std::cout << i << ":  " << current.time_stamp << "Best OFI: " << ofi << std::endl;
+    //         std::cout << i << " Timestamp:  " << current.time_stamp << "Best OFI: " << ofi << std::endl;
     //         for (int j = 0; j < level; ++j) {
     //             std::cout << "   " << j + 1 << ":" << " Deeper OFI: " << multi_ofi[j] << " Normalized OFI: " << norm_ofi[j] << std::endl;
     //         }
@@ -251,9 +249,44 @@ int main() {
     // }
 
     // Testing IntegratedOFI 
-    for (int i = 0; i < 25; ++i) {
+    IntegratedOFI integratedOFICalculator;
+    int count = 0;
+    std::vector<std::vector<double>> OFITrainData;
 
+    // collect the historical data
+    while (std::getline(dataFile, line) && count < 1001)
+    {
+        current = parseLineToSnapshot(line, level);
+
+        if (!first) {
+            std::vector<double> rawOFI = integratedOFICalculator.computeRawOFI(current, previous, level);
+            OFITrainData.push_back(rawOFI);
+        }
+        else {
+            first = false;
+        }
+
+        previous = current;
+        ++count;
     }
+
+    // Train to get w1 
+    integratedOFICalculator.train(OFITrainData, level);
+    std::cout << "Training completed using " << OFITrainData.size() << " snapshots.\n";
+
+    // Use the trained model on the next 100 OFIs
+    int used = 0;
+    while (std::getline(dataFile, line) && used < 100)
+    {
+        current = parseLineToSnapshot(line, level);
+        double integratedOFI = integratedOFICalculator.compute(current, previous, level);
+
+        std::cout << used + 1 << " Timestamp: " << current.time_stamp << " | Integrated OFI: " << integratedOFI << std::endl;
+
+        previous = current;
+        ++used;
+    }
+
 
 
     return 1;
