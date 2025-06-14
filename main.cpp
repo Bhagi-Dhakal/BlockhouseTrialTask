@@ -1,12 +1,12 @@
 /*
 ================================================================================
     Author: Bhagi Dhakal
-    BlockHouse: Trial Task 1: Order Flow Imbalances (OFI)
+    BlockHouse Trial Task 1: Order Flow Imbalances (OFI)
     Description: Construction of the following OFI features, Best-Level OFI,
         Multi-Level OFI, Integrated OFI and Cross-Asset OFI
 
     File Name: main.cpp
-    Compile: g++ -std=c++20 main.cpp -o main
+    Compile: g++ -std=c++20 -I/Library/eigen-3.4.0 main.cpp -o main
 */
 
 /* Includes */
@@ -15,6 +15,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <Eigen/Dense>
 
 /* Order Book Snapshots  */
 struct orderbookSnapshot {
@@ -117,6 +118,13 @@ public:
         return nomalizeRawOFI(raw_OFI, average_depth, level);
     }
 };
+
+
+class IntegratedOFI {
+private:
+public:
+};
+
 
 /* File Line Parser to orderbookSnapshot */
 orderbookSnapshot parseLineToSnapshot(const std::string& line, int level) {
