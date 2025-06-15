@@ -3,7 +3,8 @@
     Author: Bhagi Dhakal
     BlockHouse Trial Task 1: Order Flow Imbalances (OFI)
     Description: Construction of the following OFI features, Best-Level OFI,
-        Multi-Level OFI, Integrated OFI and Cross-Asset OFI
+        Multi-Level OFI, Integrated OFI and Cross-Asset OFI. All this is from:
+        Cross-impact of order flow imbalance in equity markets.
 
     File Name: main.cpp
     Compile: g++ -std=c++20 -I/Library/eigen-3.4.0 main.cpp -o main
@@ -26,7 +27,7 @@ struct orderbookSnapshot {
     std::vector<int> ask_sz;
 };
 
-/* Bid and Ask logic */
+/* Bid and Ask logic (Section 2.1 Data)*/
 std::vector <int> bidLogic(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
     std::vector <int> bid;
     for (int i = 0; i < level; ++i) {
@@ -61,19 +62,37 @@ std::vector <int> askLogic(const orderbookSnapshot& current, const orderbookSnap
     return ask;
 }
 
+/*** Compute Raw OFI (Section 2.1.1. Best-level OFI) ***/
+std::vector<double> computeRawOFI(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
+
+    std::vector<double> multiOFI;
+    std::vector<int> bid_size = bidLogic(current, previous, level);
+    std::vector<int> ask_size = askLogic(current, previous, level);
+
+    for (int i = 0; i < level; ++i) {
+        multiOFI.push_back(bid_size[i] - ask_size[i]);
+    }
+
+    return multiOFI;
+}
+
+/*** Log Return (Section 2.1.4. Logarithmic returns )***/
+double computeLogReturn(const orderbookSnapshot& current, const orderbookSnapshot& previous) {
+    double p_t = 0.5 * (current.bid_px[0] + current.ask_px[0]);
+    double p_t_h = 0.5 * (previous.bid_px[0] + previous.ask_px[0]);
+    return std::log(p_t / p_t_h);
+}
 
 
-/* Construction of Best-Level OFI */
+/***  Construction of Best-Level OFI  (Section 2.1.1. Best-level OFI) ***/
 class BestLevelOFI {
 public:
     int compute(const orderbookSnapshot& current, const orderbookSnapshot& previous) {
-        int bid_size = bidLogic(current, previous, 1)[0];
-        int ask_size = askLogic(current, previous, 1)[0];
-
-        return bid_size - ask_size;
+        return computeRawOFI(current, previous, 1)[0];
     }
 };
 
+/*** Construction of Deeper-Level OFI (Section 2.1.2. Deeper-level OFI) ***/
 class DeeperLevelOFI {
 private:
     double computeAverageDepth(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
@@ -97,20 +116,6 @@ private:
     }
 
 public:
-    std::vector<double> computeRawOFI(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
-
-        std::vector<double> multiOFI;
-        std::vector<int> bid_size = bidLogic(current, previous, level);
-        std::vector<int> ask_size = askLogic(current, previous, level);
-
-        for (int i = 0; i < level; ++i) {
-            multiOFI.push_back(bid_size[i] - ask_size[i]);
-        }
-
-        return multiOFI;
-    }
-
-
     std::vector<double> compute(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
         std::vector<double> raw_OFI = computeRawOFI(current, previous, level);
         double average_depth = computeAverageDepth(current, previous, level);
@@ -118,7 +123,7 @@ public:
     }
 };
 
-
+/*** Construction of Intergrated OFI (Section 2.1.3. Integrated OFI ) ***/
 class IntegratedOFI {
 private:
     // FPC 
@@ -155,18 +160,19 @@ private:
     }
 public:
 
-    std::vector<double> computeRawOFI(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
+    // std::vector<double> computeRawOFI(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
 
-        std::vector<double> multiOFI;
-        std::vector<int> bid_size = bidLogic(current, previous, level);
-        std::vector<int> ask_size = askLogic(current, previous, level);
+    //     std::vector<double> multiOFI;
+    //     std::vector<int> bid_size = bidLogic(current, previous, level);
+    //     std::vector<int> ask_size = askLogic(current, previous, level);
 
-        for (int i = 0; i < level; ++i) {
-            multiOFI.push_back(bid_size[i] - ask_size[i]);
-        }
+    //     for (int i = 0; i < level; ++i) {
+    //         multiOFI.push_back(bid_size[i] - ask_size[i]);
+    //     }
 
-        return multiOFI;
-    }
+    //     return multiOFI;
+    // }
+
     void train(const std::vector<std::vector<double>>& historicalOFI, int level) {
         computeFPCHistoricalOFI(historicalOFI, level);
     }
@@ -184,6 +190,29 @@ public:
         }
 
         return w1.dot(ofi_vector);
+    }
+};
+
+
+class CrossImpactBestLevelOFI {
+public:
+    std::pair<double, double> runOLSRegression(const std::vector<double>& x, const std::vector<double>& y) {
+        int n = x.size();
+        if (n != y.size() || n == 0) return { 0.0, 0.0 };
+
+        Eigen::MatrixXd X(n, 2);
+        for (int i = 0; i < n; ++i) {
+            X(i, 0) = 1.0;
+            X(i, 1) = x[i];
+        }
+
+        Eigen::VectorXd Y(n);
+        for (int i = 0; i < n; ++i) {
+            Y(i) = y[i];
+        }
+
+        Eigen::Vector2d beta = (X.transpose() * X).ldlt().solve(X.transpose() * Y);
+        return { beta(0), beta(1) };
     }
 };
 
@@ -224,8 +253,7 @@ int main() {
     // This will skip the first line, headder. 
     std::getline(dataFile, line);
 
-    /* Testing BestLevelOFI and DeeperLevelOFI */
-
+    /***  Testing BestLevelOFI and DeeperLevelOFI ***/
     // BestLevelOFI bestCalculator;
     // DeeperLevelOFI deeperCalculator;
     // for (int i = 0; i < 25; ++i) {
@@ -234,7 +262,7 @@ int main() {
 
     //     if (!first) {
     //         double ofi = bestCalculator.compute(current, previous);
-    //         std::vector<double> multi_ofi = deeperCalculator.computeRawOFI(current, previous, level);
+    //         std::vector<double> multi_ofi = computeRawOFI(current, previous, level);
     //         std::vector<double> norm_ofi = deeperCalculator.compute(current, previous, level);
     //         std::cout << i << " Timestamp:  " << current.time_stamp << "Best OFI: " << ofi << std::endl;
     //         for (int j = 0; j < level; ++j) {
@@ -248,19 +276,62 @@ int main() {
     //     previous = current;
     // }
 
-    // Testing IntegratedOFI 
-    IntegratedOFI integratedOFICalculator;
-    int count = 0;
-    std::vector<std::vector<double>> OFITrainData;
+    /*** Testing IntegratedOFI ***/
+    // IntegratedOFI integratedOFICalculator;
+    // int count = 0;
+    // std::vector<std::vector<double>> OFITrainData;
 
     // collect the historical data
-    while (std::getline(dataFile, line) && count < 1001)
-    {
-        current = parseLineToSnapshot(line, level);
+    // while (std::getline(dataFile, line) && count < 1001)
+    // {
+    //     current = parseLineToSnapshot(line, level);
+
+    //     if (!first) {
+    //         std::vector<double> rawOFI = computeRawOFI(current, previous, level);
+    //         OFITrainData.push_back(rawOFI);
+    //     }
+    //     else {
+    //         first = false;
+    //     }
+
+    //     previous = current;
+    //     ++count;
+    // }
+
+    // // Train to get w1 
+    // integratedOFICalculator.train(OFITrainData, level);
+    // std::cout << "Training completed using " << OFITrainData.size() << " snapshots.\n";
+
+    // // Use the trained model on the next 100 OFIs
+    // int used = 0;
+    // while (std::getline(dataFile, line) && used < 100)
+    // {
+    //     current = parseLineToSnapshot(line, level);
+    //     double integratedOFI = integratedOFICalculator.compute(current, previous, level);
+
+    //     std::cout << used + 1 << " Timestamp: " << current.time_stamp << " | Integrated OFI: " << integratedOFI << std::endl;
+
+    //     previous = current;
+    //     ++used;
+    // }
+
+
+    /*** Testing CrossImpactBestLevelOFI ***/
+    CrossImpactBestLevelOFI CIBLCalculator;
+
+    std::vector<double> OFITrainData;
+    std::vector<double> logReturns;
+    int count = 0;
+
+    while (std::getline(dataFile, line) && count < 2000) {
+        current = parseLineToSnapshot(line, 1);
 
         if (!first) {
-            std::vector<double> rawOFI = integratedOFICalculator.computeRawOFI(current, previous, level);
-            OFITrainData.push_back(rawOFI);
+            double ofi = computeRawOFI(current, previous, 1)[0];
+            double logValue = computeLogReturn(current, previous);
+
+            OFITrainData.push_back(ofi);
+            logReturns.push_back(logValue);
         }
         else {
             first = false;
@@ -270,24 +341,8 @@ int main() {
         ++count;
     }
 
-    // Train to get w1 
-    integratedOFICalculator.train(OFITrainData, level);
-    std::cout << "Training completed using " << OFITrainData.size() << " snapshots.\n";
-
-    // Use the trained model on the next 100 OFIs
-    int used = 0;
-    while (std::getline(dataFile, line) && used < 100)
-    {
-        current = parseLineToSnapshot(line, level);
-        double integratedOFI = integratedOFICalculator.compute(current, previous, level);
-
-        std::cout << used + 1 << " Timestamp: " << current.time_stamp << " | Integrated OFI: " << integratedOFI << std::endl;
-
-        previous = current;
-        ++used;
-    }
-
-
+    std::pair<double, double> model = CIBLCalculator.runOLSRegression(OFITrainData, logReturns);
+    std::cout << "OLS Rregression for CrossImpactBestLevelOFI: Alpha: " << model.first << " Beta: " << model.second << std::endl;
 
     return 1;
 }
