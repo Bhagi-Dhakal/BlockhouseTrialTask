@@ -1,5 +1,4 @@
 /*
-================================================================================
     Author: Bhagi Dhakal
     BlockHouse Trial Task 1: Order Flow Imbalances (OFI)
     Description: Construction of the following OFI features, Best-Level OFI,
@@ -159,20 +158,6 @@ private:
         w1_computed = true;
     }
 public:
-
-    // std::vector<double> computeRawOFI(const orderbookSnapshot& current, const orderbookSnapshot& previous, int level) {
-
-    //     std::vector<double> multiOFI;
-    //     std::vector<int> bid_size = bidLogic(current, previous, level);
-    //     std::vector<int> ask_size = askLogic(current, previous, level);
-
-    //     for (int i = 0; i < level; ++i) {
-    //         multiOFI.push_back(bid_size[i] - ask_size[i]);
-    //     }
-
-    //     return multiOFI;
-    // }
-
     void train(const std::vector<std::vector<double>>& historicalOFI, int level) {
         computeFPCHistoricalOFI(historicalOFI, level);
     }
@@ -193,7 +178,7 @@ public:
     }
 };
 
-
+/*** Construction of Cross Impact BestLevel OFI (Section 3.1.1. Price impact of best-level OFIs) ***/
 class CrossImpactBestLevelOFI {
 public:
     std::pair<double, double> runOLSRegression(const std::vector<double>& x, const std::vector<double>& y) {
@@ -217,7 +202,7 @@ public:
 };
 
 
-/* File Line Parser to orderbookSnapshot */
+/*** ile Line Parser to orderbookSnapshot ***/
 orderbookSnapshot parseLineToSnapshot(const std::string& line, int level) {
     std::stringstream ss(line);
     std::string token;
@@ -237,93 +222,153 @@ orderbookSnapshot parseLineToSnapshot(const std::string& line, int level) {
         multi_snapshot.bid_sz.push_back(std::stoi(fields[15 + i * 6]));
         multi_snapshot.ask_sz.push_back(std::stoi(fields[16 + i * 6]));
     }
-
-    //std::cout << snapshot.time_stamp << " bid_px[i]: " << snapshot.bid_px[i] << " ask_px[i]: " << snapshot.ask_px[i] << " bid_sz[i]: " << snapshot.bid_sz[i] << " ask_sz[i]: " << snapshot.ask_sz[i] << std::endl;
     return multi_snapshot;
 }
 
-/***  Main Function ***/
-int main() {
-    int level = 10;
-    std::ifstream dataFile("first_25000_rows.csv");
+
+/*** Test Functions  ***/
+
+/* Test Best Level OFI */
+void testBestLevelOFI(std::ifstream& datafile, int level) {
+    std::cout << " TEST: BEST LEVEL OFI " << std::endl;
+
     std::string line;
     orderbookSnapshot previous, current;
     bool first = true;
+    datafile.seekg(0, std::ios::beg);
+
+    BestLevelOFI calculator;
 
     // This will skip the first line, headder. 
-    std::getline(dataFile, line);
+    std::getline(datafile, line);
 
-    /***  Testing BestLevelOFI and DeeperLevelOFI ***/
-    // BestLevelOFI bestCalculator;
-    // DeeperLevelOFI deeperCalculator;
-    // for (int i = 0; i < 25; ++i) {
-    //     std::getline(dataFile, line);
-    //     current = parseLineToSnapshot(line, level);
+    for (int i = 0; i < 100; ++i) {
+        std::getline(datafile, line);
+        current = parseLineToSnapshot(line, level);
 
-    //     if (!first) {
-    //         double ofi = bestCalculator.compute(current, previous);
-    //         std::vector<double> multi_ofi = computeRawOFI(current, previous, level);
-    //         std::vector<double> norm_ofi = deeperCalculator.compute(current, previous, level);
-    //         std::cout << i << " Timestamp:  " << current.time_stamp << "Best OFI: " << ofi << std::endl;
-    //         for (int j = 0; j < level; ++j) {
-    //             std::cout << "   " << j + 1 << ":" << " Deeper OFI: " << multi_ofi[j] << " Normalized OFI: " << norm_ofi[j] << std::endl;
-    //         }
-    //     }
-    //     else {
-    //         first = false;
-    //     }
+        if (!first) {
+            double bestLevelOFI = calculator.compute(current, previous);
+            std::cout << i + 1 << "| Timestamp: " << current.time_stamp << " | Best Level OFI: " << bestLevelOFI << std::endl;
+        }
+        else {
+            first = false;
+        }
+        previous = current;
+    }
+    std::cout << std::endl;
 
-    //     previous = current;
-    // }
+}
 
-    /*** Testing IntegratedOFI ***/
-    // IntegratedOFI integratedOFICalculator;
-    // int count = 0;
-    // std::vector<std::vector<double>> OFITrainData;
+/* Test Deeper Level OFI */
+void testDeeperLevelOFI(std::ifstream& datafile, int level) {
+    std::cout << " TEST: DEEPER LEVEL OFI " << std::endl;
+
+    std::string line;
+    orderbookSnapshot previous, current;
+    bool first = true;
+    datafile.seekg(0, std::ios::beg);
+
+    DeeperLevelOFI calculator;
+
+    // This will skip the first line, headder. 
+    std::getline(datafile, line);
+
+    // looking at the first 5 rows 
+    for (int i = 0; i < 6; ++i) {
+        std::getline(datafile, line);
+        current = parseLineToSnapshot(line, level);
+
+        if (!first) {
+            std::vector<double> ofi = calculator.compute(current, previous, level);
+            std::cout << i << "| Timestamp: " << current.time_stamp << std::endl;
+            for (int j = 0; j < level; ++j) {
+                std::cout << "  " << j + 1 << " | Deeper Level OFI: " << ofi[j] << std::endl;
+            }
+        }
+        else {
+            first = false;
+        }
+        previous = current;
+
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+}
+
+/* Test Integrated OFI */
+void testIntegratedOFI(std::ifstream& datafile, int level) {
+    std::cout << " TEST: INTEGRATED OFI " << std::endl;
+
+    std::string line;
+    orderbookSnapshot previous, current;
+    bool first = true;
+    datafile.seekg(0, std::ios::beg);
+
+    IntegratedOFI integratedOFICalculator;
+    std::vector<std::vector<double>> OFITrainData;
+
+    // This will skip the first line, headder. 
+    std::getline(datafile, line);
 
     // collect the historical data
-    // while (std::getline(dataFile, line) && count < 1001)
-    // {
-    //     current = parseLineToSnapshot(line, level);
+    for (int i = 0; i < 1000; ++i) {
+        std::getline(datafile, line);
+        current = parseLineToSnapshot(line, level);
 
-    //     if (!first) {
-    //         std::vector<double> rawOFI = computeRawOFI(current, previous, level);
-    //         OFITrainData.push_back(rawOFI);
-    //     }
-    //     else {
-    //         first = false;
-    //     }
+        if (!first) {
+            std::vector<double> rawOFI = computeRawOFI(current, previous, level);
+            OFITrainData.push_back(rawOFI);
+        }
+        else {
+            first = false;
+        }
 
-    //     previous = current;
-    //     ++count;
-    // }
+        previous = current;
+    }
 
-    // // Train to get w1 
-    // integratedOFICalculator.train(OFITrainData, level);
-    // std::cout << "Training completed using " << OFITrainData.size() << " snapshots.\n";
+    // Train to get w1 
+    integratedOFICalculator.train(OFITrainData, level);
+    std::cout << "Training completed using " << OFITrainData.size() << " snapshots.\n";
 
-    // // Use the trained model on the next 100 OFIs
-    // int used = 0;
-    // while (std::getline(dataFile, line) && used < 100)
-    // {
-    //     current = parseLineToSnapshot(line, level);
-    //     double integratedOFI = integratedOFICalculator.compute(current, previous, level);
+    // Use the trained model on the next 100 OFIs
+    int used = 0;
+    for (int i = 0; i < 100; ++i)
+    {
+        std::getline(datafile, line);
+        current = parseLineToSnapshot(line, level);
+        double integratedOFI = integratedOFICalculator.compute(current, previous, level);
 
-    //     std::cout << used + 1 << " Timestamp: " << current.time_stamp << " | Integrated OFI: " << integratedOFI << std::endl;
+        std::cout << i + 1 << "| Timestamp: " << current.time_stamp << " | Integrated OFI: " << integratedOFI << std::endl;
 
-    //     previous = current;
-    //     ++used;
-    // }
+        previous = current;
+    }
 
+    std::cout << std::endl;
 
-    /*** Testing CrossImpactBestLevelOFI ***/
+}
+
+/* Test Cross Impact Best Level OFI */
+void testCrossImpactBestLevelOFI(std::ifstream& datafile, int level) {
+    std::cout << " TEST: CROSS IMPACT BEST LEVEL OFI " << std::endl;
+
+    std::string line;
+    orderbookSnapshot previous, current;
+    bool first = true;
+    datafile.seekg(0, std::ios::beg);
+
+    // skip the header 
+    std::getline(datafile, line);
+
     CrossImpactBestLevelOFI CIBLCalculator;
+
 
     std::vector<double> OFITrainData;
     std::vector<double> logReturns;
-    int count = 0;
 
-    while (std::getline(dataFile, line) && count < 2000) {
+    // Training on the first 2000 rows
+    for (int i = 0; i < 2000; ++i) {
+        std::getline(datafile, line);
+
         current = parseLineToSnapshot(line, 1);
 
         if (!first) {
@@ -338,11 +383,23 @@ int main() {
         }
 
         previous = current;
-        ++count;
     }
 
     std::pair<double, double> model = CIBLCalculator.runOLSRegression(OFITrainData, logReturns);
-    std::cout << "OLS Rregression for CrossImpactBestLevelOFI: Alpha: " << model.first << " Beta: " << model.second << std::endl;
+    std::cout << "Alpha: " << model.first << " Beta: " << model.second << std::endl << std::endl;
+
+}
+
+
+/***  Main Function ***/
+int main() {
+    std::ifstream dataFile("first_25000_rows.csv");
+
+    // All the tests
+    testBestLevelOFI(dataFile, 1);
+    testDeeperLevelOFI(dataFile, 10);
+    testIntegratedOFI(dataFile, 10);
+    testCrossImpactBestLevelOFI(dataFile, 10);
 
     return 1;
 }
